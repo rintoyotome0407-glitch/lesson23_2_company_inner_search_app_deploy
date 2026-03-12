@@ -59,8 +59,8 @@ if not "initialized" in st.session_state:
 # タイトル表示
 cn.display_app_title()
 
-# モード表示
-cn.display_select_mode()
+# サイドバー表示
+cn.display_sidebar_contents()
 
 # AIメッセージの初期表示
 cn.display_initial_ai_message()

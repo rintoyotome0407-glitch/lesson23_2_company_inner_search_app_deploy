@@ -11,9 +11,11 @@ from logging.handlers import TimedRotatingFileHandler
 from uuid import uuid4
 import sys
 import unicodedata
+from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
 from docx import Document
+from langchain_core.documents import Document as LangChainDocument
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
@@ -123,19 +125,30 @@ def initialize_retriever():
     
     # チャンク分割用のオブジェクトを作成
     text_splitter = CharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
+        chunk_size=ct.RAG_CHUNK_SIZE,
+        chunk_overlap=ct.RAG_CHUNK_OVERLAP,
         separator="\n"
     )
 
     # チャンク分割を実施
-    splitted_docs = text_splitter.split_documents(docs_all)
+    # - 社員名簿CSVは分割せずそのまま保持し、部署問い合わせ時に必要人数をまとめて参照しやすくする
+    roster_docs = []
+    other_docs = []
+    for doc in docs_all:
+        source = str(doc.metadata.get("source", ""))
+        if Path(source).name == ct.EMPLOYEE_ROSTER_FILE_NAME:
+            roster_docs.append(doc)
+        else:
+            other_docs.append(doc)
+
+    splitted_docs = text_splitter.split_documents(other_docs)
+    splitted_docs.extend(roster_docs)
 
     # ベクターストアの作成
     db = Chroma.from_documents(splitted_docs, embedding=embeddings)
 
     # ベクターストアを検索するRetrieverの作成
-    st.session_state.retriever = db.as_retriever(search_kwargs={"k": 3})
+    st.session_state.retriever = db.as_retriever(search_kwargs={"k": ct.RAG_RETRIEVER_K})
 
 
 def initialize_session_state():
@@ -217,7 +230,101 @@ def file_load(path, docs_all):
         # ファイルの拡張子に合ったdata loaderを使ってデータ読み込み
         loader = ct.SUPPORTED_EXTENSIONS[file_extension](path)
         docs = loader.load()
+
+        # 社員名簿CSVは、行単位ドキュメントを1つのドキュメントに統合し検索しやすくする
+        if file_extension == ".csv" and file_name == ct.EMPLOYEE_ROSTER_FILE_NAME:
+            docs = merge_employee_roster_docs(path, docs)
+
         docs_all.extend(docs)
+
+
+def merge_employee_roster_docs(path, docs):
+    """
+    社員名簿CSVの各行ドキュメントを、検索向けに1つのドキュメントへ統合
+
+    Args:
+        path: ファイルパス
+        docs: CSVLoaderで読み込んだ行単位ドキュメントリスト
+
+    Returns:
+        統合済みドキュメントのリスト（部署別）
+    """
+    if not docs:
+        return docs
+
+    department_rows = {}
+
+    for index, doc in enumerate(docs, start=1):
+        row_data = parse_csv_row_content(doc.page_content)
+
+        employee_id = row_data.get("社員ID", "")
+        full_name = row_data.get("氏名（フルネーム）", "")
+        gender = row_data.get("性別", "")
+        birth_date = row_data.get("生年月日", "")
+        age = row_data.get("年齢", "")
+        email = row_data.get("メールアドレス", "")
+        employee_type = row_data.get("従業員区分", "")
+        join_date = row_data.get("入社日", "")
+        department = row_data.get("部署", "")
+        position = row_data.get("役職", "")
+        skill_set = row_data.get("スキルセット", "")
+        qualifications = row_data.get("保有資格", "")
+        university_name = row_data.get("大学名", "")
+        faculty_department = row_data.get("学部・学科", "")
+        graduation_date = row_data.get("卒業年月日", "")
+
+        row_text = (
+            f"社員ID={employee_id} / 氏名={full_name} / 性別={gender} / 生年月日={birth_date} / 年齢={age} / "
+            f"メールアドレス={email} / 従業員区分={employee_type} / 入社日={join_date} / 役職={position} / "
+            f"スキルセット={skill_set} / 保有資格={qualifications} / 大学名={university_name} / "
+            f"学部・学科={faculty_department} / 卒業年月日={graduation_date} / 部署={department}"
+        )
+
+        if department not in department_rows:
+            department_rows[department] = []
+        department_rows[department].append(row_text)
+
+    merged_docs = []
+    for department, rows in department_rows.items():
+        header_lines = [
+            f"社員名簿一覧（検索用）: 部署={department}",
+            f"このドキュメントは部署={department}の従業員情報一覧です。",
+            f"人数={len(rows)}",
+            ""
+        ]
+
+        department_lines = []
+        for index, row_text in enumerate(rows, start=1):
+            department_lines.append(f"{index}. {row_text}")
+
+        merged_content = "\n".join(header_lines + department_lines)
+        merged_doc = LangChainDocument(
+            page_content=merged_content,
+            metadata={"source": path, "department": department}
+        )
+        merged_docs.append(merged_doc)
+
+    return merged_docs
+
+
+def parse_csv_row_content(page_content):
+    """
+    CSVLoaderの1行テキスト（"項目: 値"の複数行）を辞書化
+
+    Args:
+        page_content: CSVLoaderが生成した1行分のテキスト
+
+    Returns:
+        項目名と値の辞書
+    """
+    row_data = {}
+    for line in page_content.splitlines():
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        row_data[key.strip()] = value.strip()
+
+    return row_data
 
 
 def adjust_string(s):

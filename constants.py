@@ -25,6 +25,7 @@ LINK_SOURCE_ICON = ":material/link: "
 WARNING_ICON = ":material/warning:"
 ERROR_ICON = ":material/error:"
 SPINNER_TEXT = "回答生成中..."
+MODE_SELECTOR_COLUMN_RATIOS = [100, 1]
 
 
 # ==========================================
@@ -50,11 +51,18 @@ RAG_TOP_FOLDER_PATH = "./data"
 SUPPORTED_EXTENSIONS = {
     ".pdf": PyMuPDFLoader,
     ".docx": Docx2txtLoader,
-    ".csv": lambda path: CSVLoader(path, encoding="utf-8")
+    ".csv": lambda path: CSVLoader(path, encoding="utf-8"),
+    ".txt": lambda path: TextLoader(path, encoding="utf-8")
 }
 WEB_URL_LOAD_TARGETS = [
     "https://generative-ai.web-camp.io/"
 ]
+EMPLOYEE_ROSTER_FILE_NAME = "社員名簿.csv"
+RAG_RETRIEVER_K = 5
+RAG_CHUNK_SIZE = 500
+RAG_CHUNK_OVERLAP = 50
+RAG_MAIN_CONTEXT_INDEX = 0
+RAG_SUB_CONTEXT_START_INDEX = 1
 
 
 # ==========================================
