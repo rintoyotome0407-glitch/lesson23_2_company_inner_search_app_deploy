@@ -28,6 +28,7 @@ def display_select_mode():
     # 回答モードを選択する用のラジオボタンを表示
     col1, col2 = st.columns(ct.MODE_SELECTOR_COLUMN_RATIOS)
     with col1:
+        st.markdown("**利用目的**")
         # 「label_visibility="collapsed"」とすることで、ラジオボタンを非表示にする
         st.session_state.mode = st.radio(
             label="",
