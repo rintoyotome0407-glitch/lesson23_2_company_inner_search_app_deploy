@@ -6,6 +6,7 @@ chromadb
 tiktoken
 openai
 python-dotenv
+python-docx
 pypdf
 beautifulsoup4
 pandas
